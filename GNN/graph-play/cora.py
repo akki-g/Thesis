@@ -502,4 +502,195 @@ def dijakstra(graph, start_node, end_node=None):
                 predecessors[neighbor] = curr_node
                 heapq.heappush(pq, (distance, neighbor))
 
-    return distance, predecessors
+    return distances, predecessors
+
+def reconstruct_path(predecessors, start_node, end_node):
+    """ reconstructs a path fron start to end using predecessors"""
+
+    path = []   
+    current = end_node
+
+    while current is not None:
+        path.append(current)
+        current = predecessors[current]
+
+    path.reverse()
+
+    if path[0] != start_node:
+        return None
+    
+    return path
+
+
+start = 0
+end = 100
+
+distances, predecessors = dijakstra(cora_graph, start, end)
+
+if distances[end] != float('inf'):
+    path = reconstruct_path(predecessors, start, end)
+
+    print(f"Shortest Path from paper {start} to paper {end}: ")
+    print(f"Path: {path}")
+    print(f"Lenght: {len(path)}")
+    print(f"\nInterpretation: Paper {end} cites a paper which cites another, which cites another, eventually leading to paper {start}")
+
+else:
+    print(f"No citation path exists from {start} for {end}")
+
+
+# good questions to explore about a graph
+
+def graph_diameter(graph, sample_size=100):
+
+    import random
+
+    max_dist = 0
+    nodes = random.sample(range(graph.num_nodes), min(sample_size, graph.num_nodes))
+
+    for n in nodes:
+        distances, _ = dijakstra(graph, n)
+
+        reachable_dists = [d for d in distances if d != float('inf')]
+
+        if reachable_dists:
+            max_dist = max(max_dist, max(reachable_dists))
+
+
+    return max_dist
+
+
+print(f"Approx Diameter: {graph_diameter(cora_graph)}")
+
+def count_connected_components(graph):
+    visited = set()
+
+    num_components = 0
+
+    for start in range(graph.num_nodes):
+        if start in visited:
+            continue
+
+        num_components += 1
+        q = deque([start])
+        visited.add(start)
+
+        while q:
+            node = q.popleft()
+
+            for neighbor in graph.get_neighbors(node):
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    q.append(neighbor)
+
+    return num_components
+
+print(f"Connected Components: {count_connected_components(cora_graph)}")
+
+# these can all be connected to MARL as:
+# the shortest path between nodes can be interpreted as the shorted number of communication hops between agents
+# diameter: can be interpretes as the worst case communication delay
+# connected components: can be interpreted as seperate agents teams/squads
+
+# more standard graph practice
+
+def bfs_layers(graph, start_node, max_depth=None):
+    """BFA that returns nodes at each depth level
+    this mirrors how GNNs aggregate information layer-by-layer"""
+
+
+    visited = {start_node}
+    layers = [[start_node]]
+    curr_layer = [start_node]
+
+    depth = 0
+    while curr_layer and (max_depth is None or max_depth > depth):
+        next_layer = []
+
+        for node in curr_layer:
+            for neighbor in graph.get_neighbors(node):
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    next_layer.append(neighbor)
+        if next_layer:
+            depth += 1
+            layers.append(next_layer)
+            curr_layer = next_layer
+        else:
+            break
+
+    return layers
+
+layers = bfs_layers(cora_graph, start, max_depth=3)
+
+print(f"receptive field from node {start}:")
+for i, layer in enumerate(layers):
+    print(f"    Depth {i}: {len(layer)} nodes")
+    if i <= 2:
+        print(f"    Nodes: {layer[:10]}...")
+
+print(f"interpretation: a 3-layer GNN can see at node {start} information from:")
+print(f"{sum(len(l) for l in layers)} nodes total out of {cora_graph.num_nodes} nodes")
+
+
+# who are the most important papers
+
+def degree_centrality(graph):
+    degrees = [graph.get_degree(i) for i in range(graph.num_nodes)]
+
+    max_degree = max(degrees)
+
+    return [d/ max_degree for d in degrees]
+
+
+def between_centrality_approx(graph, sample_size=100):
+    """papers that are on many shortes paths 
+    these are bridge papers connecting different research areas"""
+
+    import random
+
+    betweenness = defaultdict(int)
+    nodes = random.sample(range(graph.num_nodes), min(sample_size, graph.num_nodes))
+
+    for start in nodes:
+        distances, predecessors = dijakstra(graph, node)
+
+        for end in nodes:
+            if end == start or distances[end] == float('inf'):
+                continue
+
+            path = reconstruct_path(graph, start, end)
+
+            if path:
+                for node in path[1:-1]:
+                    betweenness[node] += 1
+
+    values = list(betweenness.values())
+
+    if values: 
+        max_val = max(values)
+        return {k: v/max_val for k,v in betweenness.items()}
+    
+    else:
+        return {}
+    
+
+deg_cent = degree_centrality(cora_graph)
+between_cent = between_centrality_approx(cora_graph)
+
+most_cited = np.argsort(deg_cent)[-10:][::-1]
+most_brigde = sorted(between_cent.items(), key= lambda x: x[1], reverse=True)[:10]
+
+print("Most cited papers (degree centralilty)")
+for node in most_cited:
+    print(f"Node {node}: degree = {cora_graph.get_degree(node)}")
+
+print("\n Most bridged papers:")
+for node, cent in most_brigde:
+    print(f"Node {node}: betweenness {cent:.3f}")
+
+# connections to MARL Space:
+# degree centrality: which agents communicate w most others
+# betweenness: which agents are critical for team coordination
+# w formation control, high-betweenness agents are single points of failure
+
