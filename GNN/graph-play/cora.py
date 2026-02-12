@@ -3,7 +3,8 @@ import pandas as pd
 import networkx as nx
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
-from collections import deque, defaultdict
+from collections import deque, defaultdict, Counter
+import random
 
 from torch_geometric.datasets import Planetoid
 
@@ -12,7 +13,8 @@ dataset = Planetoid(root='/tmp/Cora', name='Cora')
 
 data= dataset[0]
 
-
+print(f"Y shape: {data.y.shape}")
+print(f"Y: {data.y}")
 edges = data.edge_index.numpy().T
 node_features = data.x.numpy()
 labels = data.y.numpy()
@@ -64,6 +66,56 @@ class Graph:
     
     def get_node_attributes(self, node, attr_name, default=None):
         return self.node_attributes.get(node, {}).get(attr_name, default)
+
+    # laplacian
+
+    def compute_degree_matrix(self):
+
+        degrees = np.array([self.get_degree(n) for n in range(self.num_nodes)])
+        D = np.diag(degrees)
+        return D
+    
+    def compute_graph_laplacian(self, normalized=False, symmetric=True):
+        """computes laplacian of graph
+        args: normalized: if true computes normalized Laplacian
+        symmetric: if true and normalized computes normalized symmetric Laplacian
+        if false and normalized then computes random walk Laplacian
+        
+        types of Laplacians:
+        1) Unnormalized: L=D-A
+        2) Symmetric Normalized: Lsym = I - D^(-1/2) A D^(-1/2)
+        3) Random Walk: Lrw = I - D^(-1) A"""
+
+        A = self.adj_matrix.astype(float)
+        D = self.compute_degree_matrix()
+
+        if not normalized:
+            L = D - A
+            laplacian_type = "unnormalized"
+
+        else: 
+            if symmetric:
+                D_inv_sq = np.zeros_like(D)
+
+                for i in range(self.num_nodes):
+                    if D[i, i] > 0:
+                        D_inv_sq[i, i] = 1.0 / np.sqrt(D[i,i])
+
+                L = np.eye(self.num_nodes) - D_inv_sq @ A @ D_inv_sq
+                laplacian_type = "normalized symmetric"
+
+            else:
+                D_inv = np.zeros_like(D)
+                
+                for i in range(self.num_nodes):
+                    if D[i,i] > 0:
+                        D_inv[i,i] = 1.0 / D[i,i]
+
+                L = np.eye(self.num_nodes) - D_inv @ A
+                laplacian_type = "random walk"
+
+        return L, laplacian_type
+
     
     # viz methods
 
@@ -526,7 +578,7 @@ start = 0
 end = 100
 
 distances, predecessors = dijakstra(cora_graph, start, end)
-
+"""
 if distances[end] != float('inf'):
     path = reconstruct_path(predecessors, start, end)
 
@@ -538,13 +590,10 @@ if distances[end] != float('inf'):
 else:
     print(f"No citation path exists from {start} for {end}")
 
-
+"""
 # good questions to explore about a graph
 
 def graph_diameter(graph, sample_size=100):
-
-    import random
-
     max_dist = 0
     nodes = random.sample(range(graph.num_nodes), min(sample_size, graph.num_nodes))
 
@@ -560,7 +609,7 @@ def graph_diameter(graph, sample_size=100):
     return max_dist
 
 
-print(f"Approx Diameter: {graph_diameter(cora_graph)}")
+#print(f"Approx Diameter: {graph_diameter(cora_graph)}")
 
 def count_connected_components(graph):
     visited = set()
@@ -585,7 +634,7 @@ def count_connected_components(graph):
 
     return num_components
 
-print(f"Connected Components: {count_connected_components(cora_graph)}")
+#print(f"Connected Components: {count_connected_components(cora_graph)}")
 
 # these can all be connected to MARL as:
 # the shortest path between nodes can be interpreted as the shorted number of communication hops between agents
@@ -623,14 +672,14 @@ def bfs_layers(graph, start_node, max_depth=None):
 
 layers = bfs_layers(cora_graph, start, max_depth=3)
 
-print(f"receptive field from node {start}:")
+#print(f"receptive field from node {start}:")
 for i, layer in enumerate(layers):
     print(f"    Depth {i}: {len(layer)} nodes")
     if i <= 2:
         print(f"    Nodes: {layer[:10]}...")
 
-print(f"interpretation: a 3-layer GNN can see at node {start} information from:")
-print(f"{sum(len(l) for l in layers)} nodes total out of {cora_graph.num_nodes} nodes")
+#print(f"interpretation: a 3-layer GNN can see at node {start} information from:")
+#print(f"{sum(len(l) for l in layers)} nodes total out of {cora_graph.num_nodes} nodes")
 
 
 # who are the most important papers
@@ -647,19 +696,17 @@ def between_centrality_approx(graph, sample_size=100):
     """papers that are on many shortes paths 
     these are bridge papers connecting different research areas"""
 
-    import random
-
     betweenness = defaultdict(int)
     nodes = random.sample(range(graph.num_nodes), min(sample_size, graph.num_nodes))
 
     for start in nodes:
-        distances, predecessors = dijakstra(graph, node)
+        distances, predecessors = dijakstra(graph, start)
 
         for end in nodes:
             if end == start or distances[end] == float('inf'):
                 continue
 
-            path = reconstruct_path(graph, start, end)
+            path = reconstruct_path(predecessors, start, end)
 
             if path:
                 for node in path[1:-1]:
@@ -681,16 +728,104 @@ between_cent = between_centrality_approx(cora_graph)
 most_cited = np.argsort(deg_cent)[-10:][::-1]
 most_brigde = sorted(between_cent.items(), key= lambda x: x[1], reverse=True)[:10]
 
-print("Most cited papers (degree centralilty)")
+"""print("Most cited papers (degree centralilty)")
 for node in most_cited:
     print(f"Node {node}: degree = {cora_graph.get_degree(node)}")
 
 print("\n Most bridged papers:")
 for node, cent in most_brigde:
-    print(f"Node {node}: betweenness {cent:.3f}")
+    print(f"Node {node}: betweenness {cent:.3f}")"""
 
 # connections to MARL Space:
 # degree centrality: which agents communicate w most others
 # betweenness: which agents are critical for team coordination
 # w formation control, high-betweenness agents are single points of failure
 
+
+#community detection
+
+def label_propagation(graph, max_iterations=100):
+
+    labels = {i: i for i in range(graph.num_nodes)}
+
+    for iteration in range(max_iterations):
+        changed = False
+        nodes = list(range(graph.num_nodes))
+        random.shuffle(nodes)
+
+        for node in nodes:
+            neighbors = graph.get_neighbors(node)
+
+            if not neighbors:
+                continue
+
+            neighbor_labels = [labels[n] for n in neighbors]
+            most_common = Counter(neighbor_labels).most_common(1)[0][0]
+
+            if labels[node] != most_common:
+                labels[node] = most_common
+                changed = True
+
+        if not changed:
+            print(f"Converged at iteration: {iteration}")
+            break
+
+    unique_label = len(set(labels.values()))
+
+    print(f"Found {unique_label} communities")
+
+
+    return labels
+
+#communities = label_propagation(cora_graph)
+#community_sizes = Counter(communities.values())
+
+#print(f"\nCommunity Sizes: {sorted(community_sizes.values(), reverse=True)}")
+
+
+#print(f"\nAcutal paper categories in Cora: {len(set(labels))}")
+
+
+#simulate GNN agregation (averaging neighbor features)
+
+def simulate_gnn_aggregation(graph, node_feats, num_layers=2):
+
+    curr_feats = node_feats.copy()
+    for layer in range(num_layers):
+        print(f"\n=== Layer {layer+1} ===")
+
+        next_feats = np.zeros_like(curr_feats)
+
+        for node in range(graph.num_nodes):
+            neighbors = graph.get_neighbors(node)
+
+            if neighbors:
+                neighbor_feats = curr_feats[neighbors]
+                aggregated = np.mean(neighbor_feats, axis=0)
+
+                next_feats[node] = 0.5 * curr_feats[node] + 0.5 * aggregated    
+            else:
+                next_feats[node] = curr_feats[node]
+
+        curr_feats = next_feats
+
+        #check similarity between neighboring nodes now
+        sample_node = 0
+        neighbors = graph.get_neighbors(sample_node)
+        if neighbors:
+            similarity = np.mean([
+                np.dot(curr_feats[sample_node], curr_feats[n]) /
+                (np.linalg.norm(curr_feats[sample_node]) * np.linalg.norm(curr_feats[n]))
+            for n in neighbors])
+
+            print(f"Average similarity at iteration {layer}: {similarity:3f}")
+
+    return curr_feats
+
+
+"""
+print("Simulation:")
+print("Initial features: random word vectors")
+print("After aggregation: neighbors becom more similar")
+"""
+# final_feats = simulate_gnn_aggregation(cora_graph, node_features, num_layers=5)
