@@ -126,3 +126,4 @@ values = critic.forward(obs)
 
 print(f"Values shape: {values.shape}")
 print(f"Sample value: {values[0]}")
+
