@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
-from torch.distributions import Normal
+from torch.distributions import Categorical
 
 class ActorNetwork(nn.Module):
     def __init__(self, obs_dim, hidden_dim, actions_dim):
@@ -10,8 +10,6 @@ class ActorNetwork(nn.Module):
         self.fc1 = nn.Linear(obs_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
         self.fc3 = nn.Linear(hidden_dim, actions_dim)
-
-        self.log_std = nn.Parameter(torch.zeros(actions_dim))
 
         self._init_weights()
         
@@ -34,18 +32,16 @@ class ActorNetwork(nn.Module):
         x = F.relu(x)
 
         x = self.fc3(x)
-        x = F.tanh(x)
+        x = F.softmax(x)
 
 
-        return x, self.log_std
+        return x
     
 
     def get_action_and_log_probs(self, obs, action=None):
 
-        mean, std = self.forward(obs)
-        std = torch.exp(std)
-
-        dist = Normal(mean, std)
+        logits = self.forward(obs)
+        dist = Categorical(logits=logits)
 
         if action is None:
             action = dist.sample()
@@ -58,33 +54,16 @@ class ActorNetwork(nn.Module):
 
     def evaluate_actions(self, obs, actions):
 
-        mean, std = self.forward(obs)
-        std = torch.exp(std)
-
-        dist = Normal(mean, std)
+        logits = self.forward(obs)
+        dist = Categorical(logits=logits)
 
         log_prob = dist.log_prob(actions)
         log_prob = log_prob.sum(dim=-1)
 
         entropy = dist.entropy().sum(dim=-1)
 
-        return log_prob, entropy, mean
+        return log_prob, entropy, logits
     
-
-    
-
-
-
-
-actor = ActorNetwork(obs_dim=14, hidden_dim=64, actions_dim=2)
-obs = torch.randn(32, 14)
-
-actions, log_probs, entropy = actor.get_action_and_log_probs(obs)
-
-print(f"Actions shape: {actions.shape}")
-print(f"Log probs shape: {log_probs.shape}")
-print(f"Entropy Shape: {entropy.shape}")
-print(f"Sample actions: {actions[0]}")
 
 
 
@@ -118,12 +97,5 @@ class CriticNetwork(nn.Module):
         x = self.fc3(x)
 
 
+    
         return x
-
-
-critic = CriticNetwork(obs_dims=14, hidden_dims=64)
-values = critic.forward(obs)
-
-print(f"Values shape: {values.shape}")
-print(f"Sample value: {values[0]}")
-

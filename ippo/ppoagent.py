@@ -2,13 +2,13 @@ import torch
 import torch.nn.functional as F
 import torch.nn as nn
 
-from ippo.networks import ActorNetwork, CriticNetwork
-from ippo.rolloutBuffer import RolloutBuffer
+from networks import ActorNetwork, CriticNetwork
+from rolloutBuffer import RolloutBuffer
 
 
 class PPOAgent:
 
-    def __init__(self, obs_dim, hidden_dim, action_dim, lr=3e-4, buffer_size = 1024, gamma=0.99, gae_lambda=0.95, 
+    def __init__(self, obs_dim, hidden_dim, action_dim, lr=3e-4, buffer_size = 2048, gamma=0.99, gae_lambda=0.95, 
                  clip_epsilon=0.2, value_coef=0.5, entropy_coef=0.01, max_grad_norm=0.5):
         
         #networks
@@ -32,7 +32,7 @@ class PPOAgent:
     def select_action(self, obs):
 
         if not torch.is_tensor(obs):
-            obs = torch.stack(obs).squeeze()
+            obs = torch.from_numpy(obs).float()
 
         
         actions, log_probs, entropys = self.actor.get_action_and_log_probs(obs)
@@ -55,13 +55,19 @@ class PPOAgent:
         total_value_loss = 0
         total_entropy = 0
 
-        for _ in range(num_epochs):
+        for i in range(num_epochs):
             new_log_probs, entropy, _ = self.actor.evaluate_actions(obs,actions)
 
             #compute policy loss
+            if i%2:
+                print(f"old logs at {i}: {old_log_probs}")
+                print(f"old logs shape at {i}: {old_log_probs.shape}")
+                print(f"new logs at {i}: {new_log_probs}")
+                print(f"new logs shape at {i}: {new_log_probs.shape}")
+
             ratio = torch.exp(new_log_probs - old_log_probs)
             surr1 = ratio * advatages
-            surr2 = torch.clamp(ratio, 1.0-self.clip_eps, 1+self.clip_eps)
+            surr2 = torch.clamp(ratio, 1.0-self.clip_eps, 1+self.clip_eps) * advatages 
 
             #take min
             policy_loss = -torch.min(surr1, surr2).mean()
@@ -74,7 +80,7 @@ class PPOAgent:
             entropy_loss = -entropy.mean()
 
             #total loss 
-            loss = -policy_loss + self.value_coef * values_loss - self.entropy_coef * entropy_loss
+            loss = policy_loss + self.value_coef * values_loss - self.entropy_coef * entropy_loss
 
             #compute gradients
             self.actor_optim.zero_grad()
@@ -89,31 +95,35 @@ class PPOAgent:
             self.actor_optim.step()
             self.critic_optim.step()
 
-            with torch.no_grad():
-                values = self.critic(obs).squeeze()
-                var_returns = returns.var()
-                var_residual = (returns-values).var()
-                explained_var = 1 - var_residual / (var_returns + 1e-8)
+            total_policy_loss += policy_loss.item()
+            total_entropy += entropy.item()
+            total_value_loss += values_loss.item()
+            print(policy_loss)
+        with torch.no_grad():
+            values = self.critic(obs).squeeze()
+            var_returns = returns.var()
+            var_residual = (returns-values).var()
+            explained_var = 1 - var_residual / (var_returns + 1e-8)
 
-                rewards_tensor = torch.tensor([self.buffer.rewards[i] for i in range(len(self.buffer.rewards))])
-                values_tensor = torch.tensor([self.buffer.values[i] for i in range(len(self.buffer.values))])
-                dones_tensor = torch.tensor([self.buffer.dones[i] for i in range(len(self.buffer.dones))])
+            rewards_tensor = torch.tensor([self.buffer.rewards[i] for i in range(len(self.buffer.rewards))])
+            values_tensor = torch.tensor([self.buffer.values[i] for i in range(len(self.buffer.values))])
+            dones_tensor = torch.tensor([int(self.buffer.dones[i]) for i in range(len(self.buffer.dones))])
 
 
-                next_values = torch.zeros_like(values_tensor)
-                next_values[:-1] = values_tensor[1:]
-                next_values[-1] = last_value
+            next_values = torch.zeros_like(values_tensor)
+            next_values[:-1] = values_tensor[1:]
+            next_values[-1] = last_value
 
-                td_errors = rewards_tensor + self.gamma * (1 - dones_tensor) * next_values - values_tensor
-                mean_bellman_error = td_errors.abs().mean().item()
+            td_errors = rewards_tensor + self.gamma * (1 - dones_tensor) * next_values - values_tensor
+            mean_bellman_error = td_errors.abs().mean().item()
 
 
         self.buffer.clear()
 
         return {
-            'policy_loss': policy_loss.item(),
-            'value_loss': values_loss.item(),
-            'entropy': entropy.mean().item(),
+            'policy_loss': total_policy_loss/num_epochs,
+            'value_loss': total_value_loss/num_epochs,
+            'entropy': total_entropy/num_epochs,
             'explained_variance': explained_var.item(),
             'mean_bellman_error': mean_bellman_error
         }

@@ -32,10 +32,12 @@ class RolloutBuffer:
 
 
     def compute_returns_and_advantages(self, last_value):
-
-        rewards = torch.stack(self.rewards).squeeze()
+        rewards = torch.as_tensor(self.rewards).float()
+        values = torch.as_tensor(self.values).float()
+        dones = torch.as_tensor(self.dones).int()
+        """rewards = torch.stack(self.rewards).squeeze()
         values = torch.stack(self.values).squeeze()
-        dones = torch.stack(self.dones).squeeze()
+        dones = torch.stack(self.dones).squeeze()"""
 
         advantages = torch.zeros(self.buffer_size)
         last_gae = 0
@@ -62,9 +64,9 @@ class RolloutBuffer:
 
     def get(self):
 
-        obs = torch.stack(self.obs)
-        actions = torch.stack(self.actions)
-        log_probs = torch.stack(self.log_probs, dtype=torch.float32)
+        obs = torch.as_tensor(self.obs).float()
+        actions = torch.as_tensor(self.actions)
+        log_probs = torch.as_tensor(self.log_probs).float()
 
         adv = self.advantages
         adv = (adv - adv.mean()) / (adv.std() + 1e-8)

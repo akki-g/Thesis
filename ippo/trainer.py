@@ -1,5 +1,5 @@
 import torch
-from ippo.ppoagent import PPOAgent
+from ppoagent import PPOAgent
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -27,7 +27,6 @@ class IPPOTrainer:
     def collect_rollouts(self, num_steps, obs):
         if obs is None:
             obs, info = self.env.reset()
-
         episode_returns = {a_id: 0.0 for a_id in self.agents.keys()}
         episode_lengths = {a_id: 0 for a_id in self.agents.keys()}
         completed_episodes = []
@@ -91,7 +90,7 @@ class IPPOTrainer:
 
                 self.metrics_history['timesteps'].append(timesteps)
                 self.metrics_history['mean_episode_return'].append(mean_return)
-                self.metrics_history['mean_episode_lenght'].append(mean_length)
+                self.metrics_history['mean_episode_length'].append(mean_length)
 
             all_agent_metrics = []
             for a_id, agent in self.agents.items():
@@ -111,7 +110,7 @@ class IPPOTrainer:
                       f".       Value Loss: {avg_metrics['value_loss']:.4f}"
                       f"           Entropy: {avg_metrics['entropy']:.4f}"
                       f".    Explained Var: {avg_metrics['explained_variance']:.4f}"
-                      f"Mean Bellman Error: {avg_metrics['mean_bellman_erro']:.4f}")
+                      f"\nMean Bellman Error: {avg_metrics['mean_bellman_error']:.4f}")
 
             obs = last_obs
 
