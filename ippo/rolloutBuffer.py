@@ -69,7 +69,7 @@ class RolloutBuffer:
         log_probs = torch.as_tensor(self.log_probs).float()
 
         adv = self.advantages
-        adv = (adv - adv.mean()) / (adv.std() + 1e-8)
+        #adv = (adv - adv.mean()) / (adv.std() + 1e-8)
 
 
         return obs, actions, log_probs, adv, self.returns

@@ -32,8 +32,6 @@ class ActorNetwork(nn.Module):
         x = F.relu(x)
 
         x = self.fc3(x)
-        x = F.softmax(x)
-
 
         return x
     
@@ -47,8 +45,7 @@ class ActorNetwork(nn.Module):
             action = dist.sample()
 
         log_prob = dist.log_prob(action)
-        log_prob = log_prob.sum(dim=-1)
-        entropy = dist.entropy().sum(dim=-1)
+        entropy = dist.entropy()
         return action, log_prob, entropy
     
 
@@ -58,7 +55,6 @@ class ActorNetwork(nn.Module):
         dist = Categorical(logits=logits)
 
         log_prob = dist.log_prob(actions)
-        log_prob = log_prob.sum(dim=-1)
 
         entropy = dist.entropy().sum(dim=-1)
 

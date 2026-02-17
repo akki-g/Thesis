@@ -39,7 +39,7 @@ class PPOAgent:
         value = self.critic.forward(obs)
 
 
-        return actions.item(), log_probs.item(), value.item()
+        return actions.item(), log_probs.item(), value.squeeze(0).item()
     
 
     def update(self, last_obs, num_epochs=10, mini_batch_size=None):
