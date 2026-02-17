@@ -10,11 +10,11 @@ class GraphConv(nn.Module):
         self.K = K
 
         self.weights = nn.ParameterList(
-            [nn.Parameter(torch.eye(F,G)) for _ in range(K)
+            [nn.Parameter(torch.empty(F,G)) for _ in range(K)
             ])
 
-        """ for p in self.weights:
-            nn.init.xavier_uniform_(p)"""
+        for p in self.weights:
+            nn.init.xavier_uniform_(p)
 
 
     def forward(self, X, S):
