@@ -10,12 +10,18 @@ class PPOAgent:
 
     def __init__(self, obs_dim, hidden_dim, action_dim, lr=3e-4, buffer_size = 2048, gamma=0.99, gae_lambda=0.95, 
                  clip_epsilon=0.2, value_coef=0.5, entropy_coef=0.01, max_grad_norm=0.5):
-        
-        #networks
-        self.actor = ActorNetwork(obs_dim, hidden_dim, action_dim)
-        self.critic = CriticNetwork(obs_dim, hidden_dim)
+        if torch.cuda.is_available():
+            self.device = torch.device("cuda")
+        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            self.device = torch.device("mps")
+        else:
+            self.device = torch.device("cpu")
+    
+        #networks   
+        self.actor = ActorNetwork(obs_dim, hidden_dim, action_dim, device=self.device).to(self.device)
+        self.critic = CriticNetwork(obs_dim, hidden_dim, device=self.device).to(self.device)
         #buffer
-        self.buffer = RolloutBuffer(buffer_size, obs_dim, action_dim, gamma, gae_lambda)
+        self.buffer = RolloutBuffer(buffer_size, obs_dim, action_dim, gamma, gae_lambda, self.device)
 
         #actor/critic optimizers
         self.actor_optim = torch.optim.Adam(self.actor.parameters(), lr=lr)
@@ -32,7 +38,9 @@ class PPOAgent:
     def select_action(self, obs):
 
         if not torch.is_tensor(obs):
-            obs = torch.from_numpy(obs).float()
+            obs = torch.as_tensor(obs, dtype=torch.float32, device=self.device)
+        else:
+            obs = obs.to(self.device, dtype=torch.float32)
 
         
         actions, log_probs, entropys = self.actor.get_action_and_log_probs(obs)
@@ -42,11 +50,11 @@ class PPOAgent:
         return actions.item(), log_probs.item(), value.squeeze(0).item()
     
 
-    def update(self, last_obs, num_epochs=10, mini_batch_size=None):
+    def update(self, last_obs, num_epochs=30, mini_batch_size=None):
 
         
         with torch.no_grad():
-            last_obs_tensor = torch.FloatTensor(last_obs).unsqueeze(0)
+            last_obs_tensor = torch.as_tensor(last_obs, dtype=torch.float32, device=self.device).unsqueeze(0)
             last_value = self.critic(last_obs_tensor).squeeze()
         self.buffer.compute_returns_and_advantages(last_value)
         obs, actions, old_log_probs, advatages, returns = self.buffer.get()
@@ -59,12 +67,6 @@ class PPOAgent:
             new_log_probs, entropy, _ = self.actor.evaluate_actions(obs,actions)
 
             #compute policy loss
-            if i%2:
-                print(f"old logs at {i}: {old_log_probs}")
-                print(f"old logs shape at {i}: {old_log_probs.shape}")
-                print(f"new logs at {i}: {new_log_probs}")
-                print(f"new logs shape at {i}: {new_log_probs.shape}")
-
             ratio = torch.exp(new_log_probs - old_log_probs)
             surr1 = ratio * advatages
             surr2 = torch.clamp(ratio, 1.0-self.clip_eps, 1+self.clip_eps) * advatages 
@@ -73,14 +75,14 @@ class PPOAgent:
             policy_loss = -torch.min(surr1, surr2).mean()
 
             #value loss
-            values = self.critic(obs)
+            values = self.critic(obs).squeeze(-1)
             values_loss = F.mse_loss(values, returns)
 
             #entropy bonus 
             entropy_loss = -entropy.mean()
 
             #total loss 
-            loss = policy_loss + self.value_coef * values_loss - self.entropy_coef * entropy_loss
+            loss = policy_loss + self.value_coef * values_loss + self.entropy_coef * entropy_loss
 
             #compute gradients
             self.actor_optim.zero_grad()
@@ -96,18 +98,17 @@ class PPOAgent:
             self.critic_optim.step()
 
             total_policy_loss += policy_loss.item()
-            total_entropy += entropy.item()
+            total_entropy += entropy.mean().item()
             total_value_loss += values_loss.item()
-            print(policy_loss)
         with torch.no_grad():
             values = self.critic(obs).squeeze()
             var_returns = returns.var()
             var_residual = (returns-values).var()
             explained_var = 1 - var_residual / (var_returns + 1e-8)
 
-            rewards_tensor = torch.tensor([self.buffer.rewards[i] for i in range(len(self.buffer.rewards))])
-            values_tensor = torch.tensor([self.buffer.values[i] for i in range(len(self.buffer.values))])
-            dones_tensor = torch.tensor([int(self.buffer.dones[i]) for i in range(len(self.buffer.dones))])
+            rewards_tensor = torch.as_tensor(self.buffer.rewards, dtype=torch.float32, device=self.device)
+            values_tensor = torch.as_tensor(self.buffer.values, dtype=torch.float32, device=self.device)
+            dones_tensor = torch.as_tensor(self.buffer.dones, dtype=torch.float32, device=self.device)
 
 
             next_values = torch.zeros_like(values_tensor)
@@ -127,5 +128,3 @@ class PPOAgent:
             'explained_variance': explained_var.item(),
             'mean_bellman_error': mean_bellman_error
         }
-
-

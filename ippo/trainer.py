@@ -27,6 +27,8 @@ class IPPOTrainer:
     def collect_rollouts(self, num_steps, obs):
         if obs is None:
             obs, info = self.env.reset()
+            if getattr(self.env, "render_mode", None) == "human":
+                self.env.render()
         episode_returns = {a_id: 0.0 for a_id in self.agents.keys()}
         episode_lengths = {a_id: 0 for a_id in self.agents.keys()}
         completed_episodes = []
@@ -42,6 +44,8 @@ class IPPOTrainer:
                 log_probs[a_id] = log_prob
 
             next_obs, rewards, dones, trunc, info = self.env.step(actions)
+            if getattr(self.env, "render_mode", None) == "human":
+                self.env.render()
             
             for a_id, agent in self.agents.items():
                 agent.buffer.add_rollout(
@@ -85,8 +89,8 @@ class IPPOTrainer:
             timesteps += rollout_length
 
             if completed_episodes:
-                mean_return = sum(ep['mean_return'] for ep in completed_episodes)
-                mean_length = sum(ep['mean_length'] for ep in completed_episodes)
+                mean_return = sum(ep['mean_return'] for ep in completed_episodes) / len(completed_episodes)
+                mean_length = sum(ep['mean_length'] for ep in completed_episodes) / len(completed_episodes)
 
                 self.metrics_history['timesteps'].append(timesteps)
                 self.metrics_history['mean_episode_return'].append(mean_return)
@@ -175,6 +179,5 @@ class IPPOTrainer:
         plt.savefig(save_path, dpi=150)
         plt.show()
         print(f"Metrics plot saved to {save_path}")
-
 
 

@@ -2,12 +2,14 @@ import torch
 import torch.nn.functional as F
 import torch.nn as nn
 
+import numpy as np
 
 class RolloutBuffer:
-    def __init__(self, buffer_size, obs_dim, action_dim, gamma, gae_lambda):
+    def __init__(self, buffer_size, obs_dim, action_dim, gamma, gae_lambda, device):
         self.buffer_size = buffer_size
         self.gamma = gamma
         self.gae_lambda = gae_lambda
+        self.device = device
 
         self.obs = []
         self.actions = []
@@ -32,22 +34,20 @@ class RolloutBuffer:
 
 
     def compute_returns_and_advantages(self, last_value):
-        rewards = torch.as_tensor(self.rewards).float()
-        values = torch.as_tensor(self.values).float()
-        dones = torch.as_tensor(self.dones).int()
-        """rewards = torch.stack(self.rewards).squeeze()
-        values = torch.stack(self.values).squeeze()
-        dones = torch.stack(self.dones).squeeze()"""
+        rewards = torch.as_tensor(self.rewards, dtype=torch.float32, device=self.device)
+        values = torch.as_tensor(self.values, dtype=torch.float32, device=self.device)
+        dones = torch.as_tensor(self.dones, dtype=torch.float32, device=self.device)
 
-        advantages = torch.zeros(self.buffer_size)
+        advantages = torch.zeros(self.buffer_size, dtype=torch.float32, device=self.device)
         last_gae = 0
 
         for t in reversed(range(self.buffer_size)):
 
             if t == self.buffer_size-1:
-                if torch.is_tensor(last_value):
-                    last_value = last_value.item()
-                next_value = last_value
+                if not torch.is_tensor(last_value):
+                    next_value = torch.tensor(last_value, dtype=torch.float32, device=self.device)
+                else:
+                    next_value = last_value.to(self.device, dtype=torch.float32)
             else:
                 next_value = values[t+1]
 
@@ -64,12 +64,12 @@ class RolloutBuffer:
 
     def get(self):
 
-        obs = torch.as_tensor(self.obs).float()
-        actions = torch.as_tensor(self.actions)
-        log_probs = torch.as_tensor(self.log_probs).float()
+        obs = torch.as_tensor(np.asarray(self.obs), dtype=torch.float32, device=self.device)
+        actions = torch.as_tensor(np.asarray(self.actions), dtype=torch.long, device=self.device)
+        log_probs = torch.as_tensor(self.log_probs, dtype=torch.float32, device=self.device)
 
         adv = self.advantages
-        #adv = (adv - adv.mean()) / (adv.std() + 1e-8)
+        adv = (adv - adv.mean()) / (adv.std() + 1e-8)
 
 
         return obs, actions, log_probs, adv, self.returns
