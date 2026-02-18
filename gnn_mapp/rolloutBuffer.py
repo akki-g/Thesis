@@ -32,9 +32,9 @@ class GNNRolloutBuffer:
     def compute_advantages(self, last_values):
         N = len(self.obs[0])
         buffer_size = len(self.obs)
-        rewards = torch.as_tensor(self.rewards, dtype=torch.float32, device=self.device)
-        values = torch.as_tensor(self.values, dtype=torch.float32, device=self.device)
-        dones = torch.as_tensor(self.dones, dtype=torch.float32, device=self.device)
+        rewards = torch.stack(self.rewards).to(device=self.device, dtype=torch.float32)
+        values = torch.stack(self.values).to(device=self.device, dtype=torch.float32)
+        dones = torch.stack(self.dones).to(device=self.device, dtype=torch.float32)
 
         advantages = torch.zeros((buffer_size, N), dtype=torch.float32, device=self.device) 
         last_gae = torch.zeros(len(self.obs[0]), dtype=torch.float32, device=self.device)
@@ -62,13 +62,13 @@ class GNNRolloutBuffer:
 
 
     def get_batches(self, B):
-        perm = torch.randperm(len(self.obs))
+        perm = torch.randperm(len(self.obs), device=self.device)
         batches = perm.split(B)
         
-        obs = torch.stack(self.obs)
-        actions = torch.stack(self.actions)
-        log_probs = torch.stack(self.log_probs)
-        adj = torch.stack(self.adj)
+        obs = torch.stack(self.obs).to(device=self.device, dtype=torch.float32)
+        actions = torch.stack(self.actions).to(device=self.device, dtype=torch.long)
+        log_probs = torch.stack(self.log_probs).to(device=self.device, dtype=torch.float32)
+        adj = torch.stack(self.adj).to(device=self.device, dtype=torch.float32)
 
         for idx in batches:
             m_obs = obs[idx]
@@ -94,6 +94,5 @@ class GNNRolloutBuffer:
 
         self.advantages = None
         self.returns = None
-
 
 

@@ -16,6 +16,17 @@ class CommPolicy(nn.Module):
 
 
     def forward(self, obs, S):
+        device = next(self.parameters()).device
+
+        if not torch.is_tensor(obs):
+            obs = torch.as_tensor(obs, dtype=torch.float32, device=device)
+        else:
+            obs = obs.to(device=device, dtype=torch.float32)
+
+        if not torch.is_tensor(S):
+            S = torch.as_tensor(S, dtype=torch.float32, device=device)
+        else:
+            S = S.to(device=device, dtype=torch.float32)
 
         obs_encode = self.obsEncoder(obs)
         agg_feats = self.graphConv(obs_encode, S)
@@ -36,16 +47,18 @@ class CommPolicy(nn.Module):
         return action, log_prob, entropy
     
     def evaluate_actions(self, obs, S, actions):
-        
-        if not torch.is_tensor(actions):
-            actions = torch.as_tensor(actions, dtype=torch.long)
-
         logits = self.forward(obs, S)
+        device = logits.device
+
+        if not torch.is_tensor(actions):
+            actions = torch.as_tensor(actions, dtype=torch.long, device=device)
+        else:
+            actions = actions.to(device=device, dtype=torch.long)
+
         dist = Categorical(logits=logits)
         
         log_prob = dist.log_prob(actions)
         entropy = dist.entropy()
 
         return log_prob, entropy, logits
-
 

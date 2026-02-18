@@ -28,7 +28,7 @@ class CriticNetwork(nn.Module):
         if not torch.is_tensor(obs):
             obs = torch.tensor(obs, dtype=torch.float32, device=self.device)
         else:
-            obs.to(self.device, dtype=torch.float32)
+            obs = obs.to(self.device, dtype=torch.float32)
 
         x = self.fc1(obs)
         x = F.relu(x)

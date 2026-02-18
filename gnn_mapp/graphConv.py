@@ -31,17 +31,17 @@ class GraphConv(nn.Module):
             
 
 
-gConv = GraphConv(F=2, G=2, K=3)
+if __name__ == "__main__":
+    gConv = GraphConv(F=2, G=2, K=3)
 
-X = torch.tensor([[1, 0],
-                  [0, 1],
-                  [2, 0]], dtype=torch.float32)
+    X = torch.tensor([[1, 0],
+                      [0, 1],
+                      [2, 0]], dtype=torch.float32)
 
-S = torch.tensor([[0, 1, 0],
-                  [1, 0, 1],
-                  [0, 1, 0]], dtype=torch.float32)
+    S = torch.tensor([[0, 1, 0],
+                      [1, 0, 1],
+                      [0, 1, 0]], dtype=torch.float32)
 
-
-A = gConv(X, S)
-print(f"K: {gConv.K}")
-print(A)
+    A = gConv(X, S)
+    print(f"K: {gConv.K}")
+    print(A)
