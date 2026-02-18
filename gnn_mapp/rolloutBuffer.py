@@ -2,7 +2,7 @@ import torch
 
 
 class GNNRolloutBuffer:
-    def __init__(self,gamma, gae_lambda, device):
+    def __init__(self, gamma, gae_lambda, device):
         self.gamma = gamma
         self.gae_lambda = gae_lambda
 
@@ -68,15 +68,17 @@ class GNNRolloutBuffer:
         obs = torch.stack(self.obs)
         actions = torch.stack(self.actions)
         log_probs = torch.stack(self.log_probs)
-        
+        advantages = torch.stack(self.advantages)
 
         for idx in batches:
             m_obs = obs[idx]
             m_actions = actions[idx]
             m_log_probs = log_probs[idx]
-            m_advantages = self.advantages[idx]
+            m_advantages = advantages[idx]
             m_returns = self.returns[idx]
             m_adj = self.adj[idx]
+
+            m_advantages = (m_advantages - m_advantages.mean()) / (m_advantages.std() + 1e-8)
 
             yield m_obs, m_actions, m_log_probs, m_advantages, m_returns, m_adj
         
