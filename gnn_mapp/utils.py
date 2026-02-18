@@ -11,7 +11,7 @@ def build_adj(agent_pos, r_comm):
 
     adj.fill_diagonal_(0.0)
 
-    return dist, adj
+    return adj
 
 
 def get_agent_pos(env, device): 

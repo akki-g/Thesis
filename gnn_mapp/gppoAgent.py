@@ -30,7 +30,7 @@ class CriticNetwork(nn.Module):
         else:
             obs.to(self.device, dtype=torch.float32)
 
-        x = self.fc1(x)
+        x = self.fc1(obs)
         x = F.relu(x)
 
         x = self.fc2(x)
