@@ -1,7 +1,7 @@
 import torch
 from torch.optim import Adam
 import torch.nn.functional as F
-
+import torch.nn as nn
 from graphConv import GraphConv
 from rolloutBuffer import GNNRolloutBuffer
 from action import ActionHead
@@ -91,7 +91,7 @@ class GNNTrainer:
             )
 
             step_mean_rewards.append(rewards_tensor.mean().item())
-            self._running_episode_return += rewards_tensor.sum().item()
+            self._running_episode_return += rewards_tensor.mean().item()
 
             if all(dones.values()) or all(truncs.values()):
                 completed_episode_returns.append(self._running_episode_return)
@@ -157,8 +157,9 @@ class GNNTrainer:
 
                 self.comm_optim.zero_grad()
                 loss.backward()
-
+                nn.utils.clip_grad_norm_(self.comm_policy.parameters(), max_norm=0.5)
                 self.comm_optim.step()
+
                 policy_losses.append(policy_loss.item())
                 entropies.append(entropy_loss.item())
 
@@ -173,11 +174,11 @@ class GNNTrainer:
 
                     self.critic_optims[c].zero_grad()
                     value_loss.backward()
+                    nn.utils.clip_grad_norm_(self.critics[c].parameters(), max_norm=0.5)
                     self.critic_optims[c].step()
+
                     value_losses.append(value_loss.item())
                     bellman_errors.append(mean_bellman_error.item())
-
-
         self.buffer.clear()
         update_metrics = {
             "policy_loss": self._safe_mean(policy_losses),

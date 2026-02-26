@@ -20,11 +20,10 @@ class GraphConv(nn.Module):
     def forward(self, X, S):
 
         Z = X
-        accum = X.new_zeros(X.size(0), self.G)
+        accum = X.new_zeros(*X.shape[:-1], self.G)
 
         for k in range(self.K):
             accum += torch.matmul(Z, self.weights[k])
-
             Z = torch.matmul(S, Z)
 
         return accum

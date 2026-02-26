@@ -69,16 +69,16 @@ class GNNRolloutBuffer:
         actions = torch.stack(self.actions).to(device=self.device, dtype=torch.long)
         log_probs = torch.stack(self.log_probs).to(device=self.device, dtype=torch.float32)
         adj = torch.stack(self.adj).to(device=self.device, dtype=torch.float32)
-
+        adv_mean = self.advantages.mean()
+        adv_std = self.advantages.std() + 1e-8
+        advantages = (self.advantages - adv_mean) / adv_std
         for idx in batches:
             m_obs = obs[idx]
             m_actions = actions[idx]
             m_log_probs = log_probs[idx]
-            m_advantages = self.advantages[idx]
+            m_advantages = advantages[idx]
             m_returns = self.returns[idx]
             m_adj = adj[idx]
-
-            m_advantages = (m_advantages - m_advantages.mean()) / (m_advantages.std() + 1e-8)
 
             yield m_obs, m_actions, m_log_probs, m_advantages, m_returns, m_adj
         

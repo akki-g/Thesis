@@ -31,7 +31,7 @@ TOTAL_TIMESTEPS = 1_000_000
 ROLLOUT_LENGTH  = 2048
 BATCH_SIZE      = 64
 NUM_EPOCHS      = 10
-R_COMM          = 10.0
+R_COMM          = 1.0
 
 device = "cpu"
 
