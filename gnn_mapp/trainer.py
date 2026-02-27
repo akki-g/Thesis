@@ -25,11 +25,8 @@ class GNNTrainer:
         ).to(self.device)
         self.comm_optim = Adam(self.comm_policy.parameters(), lr=lr)
 
-        self.critics = []
-        self.critic_optims = []
-        for i in range(num_agents):
-            self.critics.append(CriticNetwork(obs_dim=obs_dim, hidden_dim=hidden_dim, device=self.device))
-            self.critic_optims.append(Adam(self.critics[i].parameters(), lr=lr))
+        self.critic = CriticNetwork(obs_dim=obs_dim, hidden_dim=hidden_dim, device=self.device)
+        self.critic_optim = Adam(self.critic.parameters(), lr=lr)
 
         self.buffer = GNNRolloutBuffer(gamma=gamma, gae_lambda=gae_lambda, device=self.device)
         self.env = env
@@ -43,6 +40,11 @@ class GNNTrainer:
             "mean_episode_rewards": [],
         }
 
+        obs, info = self.env.reset()
+        self.current_obs = torch.stack(
+            [torch.from_numpy(obs[a]) for a in self.agent_ids]
+        ).to(device=self.device, dtype=torch.float32)
+
     def _safe_mean(self, values):
         if not values:
             return 0.0
@@ -50,10 +52,7 @@ class GNNTrainer:
         
     def collect_rollouts(self, num_steps, r_comm=10):
 
-        obs, info = self.env.reset()
-        obs_tensor = torch.stack([torch.from_numpy(obs[a]) for a in self.agent_ids]).to(
-            device=self.device, dtype=torch.float32
-        )
+        obs_tensor = self.current_obs
         step_mean_rewards = []
         completed_episode_returns = []
         for _ in range(num_steps):
@@ -61,13 +60,8 @@ class GNNTrainer:
             S = build_adj(agent_pos, r_comm)
 
             actions, log_probs, entropy = self.comm_policy.get_actions(obs=obs_tensor, S=S)
-            values = []
-            for i in range(self.num_agents):
-                value = self.critics[i](obs_tensor[i]).detach().squeeze()
-                values.append(value)
-
-            values = torch.stack(values)
-
+            
+            values = self.critic(obs_tensor).detach().squeeze()
             actions_pz = {}
             for i, a_id in enumerate(self.agent_ids):
                 actions_pz[a_id] = actions[i].cpu().item()
@@ -106,6 +100,8 @@ class GNNTrainer:
                     device=self.device, dtype=torch.float32
                 )
 
+            self.current_obs = obs_tensor
+
         rollout_metrics = {
             "mean_episode_return": self._safe_mean(completed_episode_returns)
             if completed_episode_returns
@@ -121,12 +117,7 @@ class GNNTrainer:
 
         with torch.no_grad():
             last_obs_tensor = last_obs.to(device=self.device, dtype=torch.float32)
-            last_values = []
-            for i in range(self.num_agents):
-                value = self.critics[i](last_obs_tensor[i]).squeeze()
-                last_values.append(value)
-
-            last_values = torch.stack(last_values)
+            last_values = self.critic(last_obs_tensor).squeeze(-1)
         self.buffer.compute_advantages(last_values=last_values)
         policy_losses = []
         entropies = []
@@ -137,16 +128,10 @@ class GNNTrainer:
             for (obs, actions, old_log_probs, advantages, returns, A) in self.buffer.get_batches(B):
                 all_new_log_probs = []
                 all_entropy = []
-                for t in range(obs.shape[0]):
-                    new_lp_t, entropy_t, _ = self.comm_policy.evaluate_actions(obs[t], A[t], actions[t])
 
-                    all_new_log_probs.append(new_lp_t)
-                    all_entropy.append(entropy_t)
-                
-                all_new_log_probs = torch.stack(all_new_log_probs).to(device=self.device, dtype=torch.float32)
-                all_entropy = torch.stack(all_entropy).to(device=self.device, dtype=torch.float32)
+                new_lp, entropy, _ = self.comm_policy.evaluate_actions(obs, A, actions)
 
-                ratio = torch.exp(all_new_log_probs - old_log_probs)    
+                ratio = torch.exp(new_lp - old_log_probs)    
                 surr1 = ratio * advantages
                 surr2 = torch.clamp(ratio, 1-self.clip_eps, 1+self.clip_eps) * advantages
 
@@ -163,22 +148,24 @@ class GNNTrainer:
                 policy_losses.append(policy_loss.item())
                 entropies.append(entropy_loss.item())
 
-                for c in range(self.num_agents):
-                    agent_obs = obs[:, c, :]
-                    agent_returns = returns[:, c]
-                    pred_values = self.critics[c](agent_obs).squeeze()
-                    td_error = agent_returns - pred_values
+                B_size, N, obs_dim = obs.shape
+                flat_obs = obs.reshape(B_size*N,obs_dim)
+                flat_returns = returns.reshape(B_size*N)
+                
+                pred_values = self.critic(flat_obs).squeeze(-1)
+                td_error = flat_returns - pred_values
+                value_loss = F.mse_loss(pred_values, flat_returns)
+                mean_bellman_error = td_error.abs().mean()
 
-                    value_loss = F.mse_loss(pred_values, agent_returns)
-                    mean_bellman_error = td_error.abs().mean()
+                self.critic_optim.zero_grad()
+                value_loss.backward()
+                nn.utils.clip_grad_norm_(self.critic.parameters(), max_norm=0.5)
+                self.critic_optim.step()
 
-                    self.critic_optims[c].zero_grad()
-                    value_loss.backward()
-                    nn.utils.clip_grad_norm_(self.critics[c].parameters(), max_norm=0.5)
-                    self.critic_optims[c].step()
+                value_losses.append(value_loss.item())
+                bellman_errors.append(mean_bellman_error.item())
 
-                    value_losses.append(value_loss.item())
-                    bellman_errors.append(mean_bellman_error.item())
+
         self.buffer.clear()
         update_metrics = {
             "policy_loss": self._safe_mean(policy_losses),

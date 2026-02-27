@@ -9,8 +9,6 @@ def build_adj(agent_pos, r_comm):
 
     adj = (dist <= r_comm).float()
 
-    adj.fill_diagonal_(0.0)
-
     deg = adj.sum(dim=1, keepdims=True).clamp(min=1)
     adj = adj / deg
     return adj

@@ -9,7 +9,15 @@ class ActionHead(nn.Module):
 
         self.fc1 = nn.Linear(input_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, output_dim)
+        self._init_weights()
 
+
+    def _init_weights(self):
+        
+        nn.init.orthogonal_(self.fc1.weight, gain=2**0.5)
+        nn.init.constant_(self.fc1.bias, 0.0)
+        nn.init.orthogonal_(self.fc2.weight, gain=0.01)
+        nn.init.constant_(self.fc2.bias, 0.0)
 
     def forward(self, G):
 
