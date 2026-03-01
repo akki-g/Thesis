@@ -13,8 +13,11 @@ class IPPOTrainer:
         for agent_id in env.possible_agents:
             self.agents[agent_id] = PPOAgent(obs_dim, hidden_dim, action_dim)
         self.metrics_history = {
+            'iterations': [],
+            'episode_iterations': [],
             'timesteps': [],
             'mean_episode_return': [],
+            'mean_episode_reward': [],
             'mean_episode_length': [],
             'policy_loss': [],
             'value_loss': [],
@@ -83,17 +86,22 @@ class IPPOTrainer:
     def train(self, total_timesteps, rollout_length):
 
         timesteps = 0 
+        iteration = 0
         obs = None
         while timesteps < total_timesteps:
             last_obs, completed_episodes = self.collect_rollouts(rollout_length, obs)
             timesteps += rollout_length
+            iteration += 1
 
             if completed_episodes:
                 mean_return = sum(ep['mean_return'] for ep in completed_episodes) / len(completed_episodes)
                 mean_length = sum(ep['mean_length'] for ep in completed_episodes) / len(completed_episodes)
+                mean_reward = mean_return / max(mean_length, 1e-8)
 
                 self.metrics_history['timesteps'].append(timesteps)
+                self.metrics_history['episode_iterations'].append(iteration)
                 self.metrics_history['mean_episode_return'].append(mean_return)
+                self.metrics_history['mean_episode_reward'].append(mean_reward)
                 self.metrics_history['mean_episode_length'].append(mean_length)
 
             all_agent_metrics = []
@@ -101,6 +109,7 @@ class IPPOTrainer:
                 metrics = agent.update(last_obs[a_id])
                 all_agent_metrics.append(metrics)
 
+            self.metrics_history['iterations'].append(iteration)
             avg_metrics = {
                 key: sum(m[key] for m in all_agent_metrics) / len(all_agent_metrics)
                 for key in all_agent_metrics[0].keys()
@@ -119,65 +128,50 @@ class IPPOTrainer:
             obs = last_obs
 
     def plot_metrics(self, save_path='training_metrics.png'):
-        """
-        Plot all tracked metrics.
-        """
-        fig, axes = plt.subplots(3, 3, figsize=(15, 12))
-        fig.suptitle('IPPO Training Metrics', fontsize=16)
-        
-        # Episode metrics
-        if self.metrics_history['mean_episode_return']:
-            axes[0, 0].plot(self.metrics_history['timesteps'], 
-                           self.metrics_history['mean_episode_return'])
-            axes[0, 0].set_title('Mean Episode Return')
-            axes[0, 0].set_xlabel('Timesteps')
-            axes[0, 0].set_ylabel('Return')
-            axes[0, 0].grid(True)
-        
-        if self.metrics_history['mean_episode_length']:
-            axes[0, 1].plot(self.metrics_history['timesteps'], 
-                           self.metrics_history['mean_episode_length'])
-            axes[0, 1].set_title('Mean Episode Length')
-            axes[0, 1].set_xlabel('Timesteps')
-            axes[0, 1].set_ylabel('Steps')
-            axes[0, 1].grid(True)
-        
-        # Learning metrics (use update count for x-axis since they're logged per update)
-        update_steps = list(range(len(self.metrics_history['policy_loss'])))
-        
-        axes[0, 2].plot(update_steps, self.metrics_history['policy_loss'])
-        axes[0, 2].set_title('Policy Loss')
-        axes[0, 2].set_xlabel('Updates')
-        axes[0, 2].set_ylabel('Loss')
-        axes[0, 2].grid(True)
-        
-        axes[1, 0].plot(update_steps, self.metrics_history['value_loss'])
-        axes[1, 0].set_title('Value Loss')
-        axes[1, 0].set_xlabel('Updates')
-        axes[1, 0].set_ylabel('Loss')
-        axes[1, 0].grid(True)
-        
-        axes[1, 1].plot(update_steps, self.metrics_history['entropy'])
-        axes[1, 1].set_title('Entropy')
-        axes[1, 1].set_xlabel('Updates')
-        axes[1, 1].set_ylabel('Entropy')
-        axes[1, 1].grid(True)
-        
-        axes[2, 1].plot(update_steps, self.metrics_history['explained_variance'])
-        axes[2, 1].set_title('Explained Variance')
-        axes[2, 1].set_xlabel('Updates')
-        axes[2, 1].set_ylabel('Explained Var')
-        axes[2, 1].grid(True)
-        
-        axes[2, 2].plot(update_steps, self.metrics_history['mean_bellman_error'])
-        axes[2, 2].set_title('Mean Bellman Error')
-        axes[2, 2].set_xlabel('Updates')
-        axes[2, 2].set_ylabel('TD Error')
-        axes[2, 2].grid(True)
-        
+        plt.style.use('ggplot')
+        fig, axes = plt.subplots(3, 2, figsize=(16, 12))
+
+        iteration_x = self.metrics_history['iterations']
+        episode_iteration_x = self.metrics_history['episode_iterations']
+
+        axes[0, 0].plot(iteration_x, self.metrics_history['policy_loss'])
+        axes[0, 0].set_title('policy_loss')
+        axes[0, 0].set_xlabel('Iteration')
+        axes[0, 0].set_ylabel('policy_loss')
+        axes[0, 0].grid(True, alpha=0.4)
+
+        axes[0, 1].plot(iteration_x, self.metrics_history['value_loss'])
+        axes[0, 1].set_title('value_loss')
+        axes[0, 1].set_xlabel('Iteration')
+        axes[0, 1].set_ylabel('value_loss')
+        axes[0, 1].grid(True, alpha=0.4)
+
+        axes[1, 0].plot(iteration_x, self.metrics_history['entropy'])
+        axes[1, 0].set_title('entropy')
+        axes[1, 0].set_xlabel('Iteration')
+        axes[1, 0].set_ylabel('entropy')
+        axes[1, 0].grid(True, alpha=0.4)
+
+        axes[1, 1].plot(iteration_x, self.metrics_history['mean_bellman_error'])
+        axes[1, 1].set_title('mean_bellman_error')
+        axes[1, 1].set_xlabel('Iteration')
+        axes[1, 1].set_ylabel('mean_bellman_error')
+        axes[1, 1].grid(True, alpha=0.4)
+
+        axes[2, 0].plot(episode_iteration_x, self.metrics_history['mean_episode_return'])
+        axes[2, 0].set_title('mean_episode_return')
+        axes[2, 0].set_xlabel('Iteration')
+        axes[2, 0].set_ylabel('mean_episode_return')
+        axes[2, 0].grid(True, alpha=0.4)
+
+        axes[2, 1].plot(episode_iteration_x, self.metrics_history['mean_episode_reward'])
+        axes[2, 1].set_title('mean_episode_rewards')
+        axes[2, 1].set_xlabel('Iteration')
+        axes[2, 1].set_ylabel('mean_episode_rewards')
+        axes[2, 1].grid(True, alpha=0.4)
+
         plt.tight_layout()
         plt.savefig(save_path, dpi=150)
         plt.show()
         print(f"Metrics plot saved to {save_path}")
-
 
